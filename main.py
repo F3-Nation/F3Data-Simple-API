@@ -6,7 +6,13 @@ from config import Config
 app = Flask(__name__)
 app.config.from_object(Config)
 
+print("Database URI:", app.config['SQLALCHEMY_DATABASE_URI'])
 db.init_app(app)
+print("Database initialized")
+
+@app.route('/', methods=['GET'])
+def index():
+    return jsonify(message="Welcome to the VERY simple F3 Data API!")
 
 @app.route('/regions/count', methods=['GET'])
 def count_regions():
