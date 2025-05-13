@@ -67,6 +67,24 @@ def index():
         logger.error(f"Error in index route: {str(e)}")
         return jsonify(error="Error checking API health", message=str(e)), 500
 
+@app.route('/counts', methods=['GET'])
+def counts():
+    try:
+        with db.session.begin():
+            count_regions = db.session.query(Org).filter_by(org_type='region').count()
+            logger.info(f"Retrieved region count: {count_regions}")
+            count_workouts = db.session.query(Event).count()
+            logger.info(f"Retrieved weekly workouts count: {count_workouts}")
+            return jsonify(regions=count_regions, workouts=count_workouts)
+    except SQLAlchemyError as e:
+        logger.error(f"Database error in count_regions: {str(e)}")
+        return jsonify(error="Database Error", message="Failed to retrieve region count"), 500
+    except Exception as e:
+        logger.error(f"Unexpected error in count_regions: {str(e)}")
+        return jsonify(error="Unexpected Error", message=str(e)), 500
+    finally:
+        db.session.remove()
+
 @app.route('/regions/count', methods=['GET'])
 def count_regions():
     try:
