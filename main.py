@@ -108,6 +108,37 @@ if __name__ == '__main__':
     if application is None:
         sys.exit(1)
     
-    port = int(os.environ.get("PORT", 8080))
-    logger.info(f"Starting server on port {port}")
-    application.run(host='0.0.0.0', port=port)
+    # Gunicorn configuration
+    workers = int(os.environ.get('GUNICORN_WORKERS', (os.cpu_count() or 1) * 2 + 1))
+    options = {
+        'bind': f"0.0.0.0:{int(os.environ.get('PORT', 8080))}",
+        'worker_class': 'gevent',
+        'workers': workers,
+        'timeout': 120,  # Worker timeout
+        'graceful_timeout': 30,  # Grace period for workers to finish
+        'keepalive': 65,  # Keepalive timeout
+        'worker_connections': 2000,  # Max concurrent connections per worker
+        'max_requests': 1000,  # Restart workers after this many requests
+        'max_requests_jitter': 50  # Add jitter to prevent all workers restarting at once
+    }
+    
+    logger.info(f"Starting server on port {options['bind']} with timeout {options['timeout']}s")
+    
+    import gunicorn.app.base
+    
+    class StandaloneApplication(gunicorn.app.base.BaseApplication):
+        def __init__(self, app, options=None):
+            self.options = options or {}
+            self.application = app
+            super().__init__()
+
+        def load_config(self):
+            config = {key: value for key, value in self.options.items()
+                     if key in self.cfg.settings and value is not None}
+            for key, value in config.items():
+                self.cfg.set(key.lower(), value)
+
+        def load(self):
+            return self.application
+    
+    StandaloneApplication(application, options).run()
