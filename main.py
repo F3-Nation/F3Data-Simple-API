@@ -1,28 +1,113 @@
 import os
+import sys
+import logging
 from flask import Flask, jsonify
+from sqlalchemy.exc import SQLAlchemyError
 from models import db, Org, Event
 from config import Config
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 app.config.from_object(Config)
 
-print("Database URI:", app.config['SQLALCHEMY_DATABASE_URI'])
+# Log configuration details (excluding sensitive info)
+logger.info(f"Starting application in environment: {os.getenv('ENVIRONMENT', 'development')}")
+logger.info(f"Database host: {app.config['SQLALCHEMY_DATABASE_URI'].split('@')[1].split('/')[0]}")
+
 db.init_app(app)
-print("Database initialized")
+
+# Verify database connection
+def verify_db_connection():
+    if not app.config['SQLALCHEMY_DATABASE_URI']:
+        logger.error("Database URI is not configured")
+        return False
+    
+    try:
+        # Create a new engine just for testing
+        test_engine = db.create_engine(app.config['SQLALCHEMY_DATABASE_URI'])
+        test_conn = test_engine.connect()
+        test_conn.close()
+        logger.info("Database connection successful")
+        return True
+    except SQLAlchemyError as e:
+        logger.error(f"Database connection failed: {str(e)}")
+        return False
+    except Exception as e:
+        logger.error(f"Unexpected error during database connection check: {str(e)}")
+        return False
+
+# Error handler for 500 errors
+@app.errorhandler(500)
+def handle_500_error(e):
+    logger.error(f"Internal Server Error: {str(e)}")
+    return jsonify(error="Internal Server Error", message=str(e)), 500
+
+# Error handler for SQLAlchemy errors
+@app.errorhandler(SQLAlchemyError)
+def handle_db_error(e):
+    logger.error(f"Database error: {str(e)}")
+    return jsonify(error="Database Error", message="A database error occurred"), 500
 
 @app.route('/', methods=['GET'])
 def index():
-    return jsonify(message="Welcome to the VERY simple F3 Data API!")
+    try:
+        return jsonify(
+            message="Welcome to the VERY simple F3 Data API!",
+            status="healthy",
+            database_connected=verify_db_connection()
+        )
+    except Exception as e:
+        logger.error(f"Error in index route: {str(e)}")
+        return jsonify(error="Error checking API health", message=str(e)), 500
 
 @app.route('/regions/count', methods=['GET'])
 def count_regions():
-    count = Org.query.filter_by(org_type='region').count()
-    return jsonify(count=count)
+    try:
+        count = Org.query.filter_by(org_type='region').count()
+        logger.info(f"Retrieved region count: {count}")
+        return jsonify(count=count)
+    except SQLAlchemyError as e:
+        logger.error(f"Database error in count_regions: {str(e)}")
+        return jsonify(error="Database Error", message="Failed to retrieve region count"), 500
+    except Exception as e:
+        logger.error(f"Unexpected error in count_regions: {str(e)}")
+        return jsonify(error="Unexpected Error", message=str(e)), 500
 
 @app.route('/weeklyworkouts/count', methods=['GET'])
 def count_weekly_workouts():
-    count = Event.query.count()
-    return jsonify(count=count)
+    try:
+        count = Event.query.count()
+        logger.info(f"Retrieved weekly workouts count: {count}")
+        return jsonify(count=count)
+    except SQLAlchemyError as e:
+        logger.error(f"Database error in count_weekly_workouts: {str(e)}")
+        return jsonify(error="Database Error", message="Failed to retrieve workout count"), 500
+    except Exception as e:
+        logger.error(f"Unexpected error in count_weekly_workouts: {str(e)}")
+        return jsonify(error="Unexpected Error", message=str(e)), 500
+
+def create_app():
+    # Initialize extensions
+    db.init_app(app)
+    
+    # Verify database connection on startup
+    if not verify_db_connection():
+        logger.error("Failed to connect to database on startup")
+        return None
+    
+    return app
 
 if __name__ == '__main__':
-    app.run(port=int(os.environ.get("PORT", 8080)))
+    application = create_app()
+    if application is None:
+        sys.exit(1)
+    
+    port = int(os.environ.get("PORT", 8080))
+    logger.info(f"Starting server on port {port}")
+    application.run(host='0.0.0.0', port=port)
