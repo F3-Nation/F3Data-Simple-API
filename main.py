@@ -29,18 +29,19 @@ def verify_db_connection():
         return False
     
     try:
-        # Create a new engine just for testing
-        test_engine = db.create_engine(app.config['SQLALCHEMY_DATABASE_URI'])
-        test_conn = test_engine.connect()
-        test_conn.close()
-        logger.info("Database connection successful")
-        return True
+        with app.app_context():
+            db.session.execute('SELECT 1')
+            db.session.commit()
+            logger.info("Database connection successful")
+            return True
     except SQLAlchemyError as e:
         logger.error(f"Database connection failed: {str(e)}")
         return False
     except Exception as e:
         logger.error(f"Unexpected error during database connection check: {str(e)}")
         return False
+    finally:
+        db.session.remove()
 
 # Error handler for 500 errors
 @app.errorhandler(500)
@@ -69,28 +70,34 @@ def index():
 @app.route('/regions/count', methods=['GET'])
 def count_regions():
     try:
-        count = Org.query.filter_by(org_type='region').count()
-        logger.info(f"Retrieved region count: {count}")
-        return jsonify(count=count)
+        with db.session.begin():
+            count = db.session.query(Org).filter_by(org_type='region').count()
+            logger.info(f"Retrieved region count: {count}")
+            return jsonify(count=count)
     except SQLAlchemyError as e:
         logger.error(f"Database error in count_regions: {str(e)}")
         return jsonify(error="Database Error", message="Failed to retrieve region count"), 500
     except Exception as e:
         logger.error(f"Unexpected error in count_regions: {str(e)}")
         return jsonify(error="Unexpected Error", message=str(e)), 500
+    finally:
+        db.session.remove()
 
 @app.route('/weeklyworkouts/count', methods=['GET'])
 def count_weekly_workouts():
     try:
-        count = Event.query.count()
-        logger.info(f"Retrieved weekly workouts count: {count}")
-        return jsonify(count=count)
+        with db.session.begin():
+            count = db.session.query(Event).count()
+            logger.info(f"Retrieved weekly workouts count: {count}")
+            return jsonify(count=count)
     except SQLAlchemyError as e:
         logger.error(f"Database error in count_weekly_workouts: {str(e)}")
         return jsonify(error="Database Error", message="Failed to retrieve workout count"), 500
     except Exception as e:
         logger.error(f"Unexpected error in count_weekly_workouts: {str(e)}")
         return jsonify(error="Unexpected Error", message=str(e)), 500
+    finally:
+        db.session.remove()
 
 def create_app():
     # Initialize extensions
@@ -109,13 +116,12 @@ if __name__ == '__main__':
         sys.exit(1)
     
     # Gunicorn configuration
-    workers = int(os.environ.get('GUNICORN_WORKERS', (os.cpu_count() or 1) * 2 + 1))
     options = {
         'bind': f"0.0.0.0:{int(os.environ.get('PORT', 8080))}",
         'worker_class': 'gthread',
-        'workers': workers,
-        'threads': 4,  # Number of threads per worker
-        'timeout': 120,  # Worker timeout
+        'workers': 1,  # Single worker for Cloud Run
+        'threads': 8,  # Increased threads per worker
+        'timeout': 0,  # Disable timeout for Cloud Run
         'graceful_timeout': 30,  # Grace period for workers to finish
         'keepalive': 65,  # Keepalive timeout
         'max_requests': 1000,  # Restart workers after this many requests
