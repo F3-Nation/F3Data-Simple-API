@@ -112,12 +112,12 @@ if __name__ == '__main__':
     workers = int(os.environ.get('GUNICORN_WORKERS', (os.cpu_count() or 1) * 2 + 1))
     options = {
         'bind': f"0.0.0.0:{int(os.environ.get('PORT', 8080))}",
-        'worker_class': 'gevent',
+        'worker_class': 'gthread',
         'workers': workers,
+        'threads': 4,  # Number of threads per worker
         'timeout': 120,  # Worker timeout
         'graceful_timeout': 30,  # Grace period for workers to finish
         'keepalive': 65,  # Keepalive timeout
-        'worker_connections': 2000,  # Max concurrent connections per worker
         'max_requests': 1000,  # Restart workers after this many requests
         'max_requests_jitter': 50  # Add jitter to prevent all workers restarting at once
     }
