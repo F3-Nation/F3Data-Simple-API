@@ -5,6 +5,7 @@ from flask import Flask, jsonify
 from sqlalchemy.exc import SQLAlchemyError
 from models import db, Org, Event
 from config import Config
+from flask_cors import CORS
 
 # Configure logging
 logging.basicConfig(
@@ -14,6 +15,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+CORS(app)
 app.config.from_object(Config)
 
 # Log configuration details (excluding sensitive info)
